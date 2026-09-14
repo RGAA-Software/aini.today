@@ -4,6 +4,7 @@
     <Project Path="src/Aini.Application/Aini.Application.csproj" />
     <Project Path="src/Aini.Domain/Aini.Domain.csproj" />
     <Project Path="src/Aini.Infrastructure/Aini.Infrastructure.csproj" />
+    <Project Path="src/Aini.WebHost/Aini.WebHost.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Aini.UnitTests/Aini.UnitTests.csproj" />

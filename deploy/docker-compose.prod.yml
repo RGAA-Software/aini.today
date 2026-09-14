@@ -4,21 +4,16 @@ services:
     restart: unless-stopped
     environment:
       ASPNETCORE_ENVIRONMENT: Production
-    healthcheck:
-      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/api/health"]
-      interval: 15s
-      timeout: 4s
-      retries: 5
-      start_period: 10s
-
+    ports:
+      - "127.0.0.1:18081:8080"
   web:
     image: ${WEB_IMAGE:?WEB_IMAGE is required}
     restart: unless-stopped
     depends_on:
       api:
-        condition: service_healthy
+        condition: service_started
     ports:
-      - "127.0.0.1:18080:80"
+      - "127.0.0.1:18080:8080"
 
 networks:
   default:

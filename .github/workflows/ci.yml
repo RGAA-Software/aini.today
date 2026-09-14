@@ -40,8 +40,26 @@ jobs:
       SSHPASS: ${{ secrets.DEPLOY_SSH_PASSWORD }}
     steps:
       - uses: actions/checkout@v5
-      - name: Package source
-        run: git archive --format=tar.gz --output=/tmp/aini-source.tar.gz "$GITHUB_SHA"
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Build deployment package
+        run: |
+          mkdir -p /tmp/aini-package
+          git archive "$GITHUB_SHA" | tar -x -C /tmp/aini-package
+          dotnet publish src/Aini.Api/Aini.Api.csproj --configuration Release --output /tmp/aini-package/artifacts/api /p:UseAppHost=false
+          dotnet publish src/Aini.WebHost/Aini.WebHost.csproj --configuration Release --output /tmp/aini-package/artifacts/web /p:UseAppHost=false
+          cd web
+          npm ci
+          npm run build
+          mkdir -p /tmp/aini-package/artifacts/web/wwwroot
+          cp -R dist/. /tmp/aini-package/artifacts/web/wwwroot/
+          tar -C /tmp/aini-package -czf /tmp/aini-source.tar.gz .
       - name: Install SSH client helper
         run: |
           sudo apt-get update
