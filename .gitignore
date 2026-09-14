@@ -10,4 +10,5 @@
 TestResults/
 playwright-report/
 artifacts/
+*.tsbuildinfo
 .DS_Store
