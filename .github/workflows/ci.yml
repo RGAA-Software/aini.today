@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Test API
+        run: dotnet test Aini.slnx --configuration Release
+      - name: Build web
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
+  publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: verify
+    runs-on: ubuntu-latest
+    env:
+      REGISTRY: ccr.ccs.tencentyun.com
+      NAMESPACE: rgaa-aini
+      API_REPOSITORY: rgaa-aini-api
+      WEB_REPOSITORY: rgaa-aini-web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.TCR_USERNAME }}
+          password: ${{ secrets.TCR_PASSWORD }}
+      - name: Build and push API
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: src/Aini.Api/Dockerfile
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ env.API_REPOSITORY }}:sha-${{ github.sha }}
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
+      - name: Build and push web
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: web/Dockerfile
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ env.WEB_REPOSITORY }}:sha-${{ github.sha }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
+
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: publish
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      REGISTRY: ccr.ccs.tencentyun.com
+      NAMESPACE: rgaa-aini
+      API_REPOSITORY: rgaa-aini-api
+      WEB_REPOSITORY: rgaa-aini-web
+      SSHPASS: ${{ secrets.DEPLOY_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare deployment files
+        run: |
+          printf 'API_IMAGE=%s\n' "$REGISTRY/$NAMESPACE/$API_REPOSITORY:sha-$GITHUB_SHA" > deploy/.env.production
+          printf 'WEB_IMAGE=%s\n' "$REGISTRY/$NAMESPACE/$WEB_REPOSITORY:sha-$GITHUB_SHA" >> deploy/.env.production
+      - name: Upload deployment definition
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y sshpass
+          sshpass -e ssh -o StrictHostKeyChecking=accept-new "${{ secrets.DEPLOY_SSH_USER }}@${{ secrets.DEPLOY_SSH_HOST }}" "mkdir -p /opt/aini"
+          sshpass -e scp -o StrictHostKeyChecking=accept-new deploy/docker-compose.prod.yml deploy/.env.production "${{ secrets.DEPLOY_SSH_USER }}@${{ secrets.DEPLOY_SSH_HOST }}:/opt/aini/"
+      - name: Pull and start application
+        env:
+          TCR_PASSWORD: ${{ secrets.TCR_PASSWORD }}
+          TCR_USERNAME: ${{ secrets.TCR_USERNAME }}
+        run: |
+          printf '%s' "$TCR_PASSWORD" | sshpass -e ssh -o StrictHostKeyChecking=accept-new "${{ secrets.DEPLOY_SSH_USER }}@${{ secrets.DEPLOY_SSH_HOST }}" "docker login '$REGISTRY' --username '$TCR_USERNAME' --password-stdin"
+          sshpass -e ssh -o StrictHostKeyChecking=accept-new "${{ secrets.DEPLOY_SSH_USER }}@${{ secrets.DEPLOY_SSH_HOST }}" "cd /opt/aini && docker compose --env-file .env.production -f docker-compose.prod.yml pull && docker compose --env-file .env.production -f docker-compose.prod.yml up -d --remove-orphans"
+      - name: Verify deployment
+        run: |
+          for attempt in {1..12}; do
+            if curl --fail --silent --show-error https://aini.today/api/health; then
+              exit 0
+            fi
+            sleep 5
+          done
+          exit 1

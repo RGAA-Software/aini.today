@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Aini.Api/Aini.Api.csproj" />
+    <Project Path="src/Aini.Application/Aini.Application.csproj" />
+    <Project Path="src/Aini.Domain/Aini.Domain.csproj" />
+    <Project Path="src/Aini.Infrastructure/Aini.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Aini.UnitTests/Aini.UnitTests.csproj" />
+  </Folder>
+</Solution>
